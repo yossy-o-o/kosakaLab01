@@ -158,14 +158,14 @@ namespace Valve.VR.InteractionSystem
 
 			if ( limited )
 			{
-				start = Quaternion.identity;
-				outAngle = transform.localEulerAngles[(int)axisOfRotation];
+                start = Quaternion.AngleAxis(transform.localEulerAngles[(int)axisOfRotation], localPlaneNormal);
+                outAngle = transform.localEulerAngles[(int)axisOfRotation];
 
-				if ( forceStart )
-				{
-					outAngle = Mathf.Clamp( startAngle, minAngle, maxAngle );
-				}
-			}
+                if (forceStart)
+                {
+                    outAngle = Mathf.Clamp(startAngle, minAngle, maxAngle);
+                }
+            }
 			else
 			{
 				start = Quaternion.AngleAxis( transform.localEulerAngles[(int)axisOfRotation], localPlaneNormal );
@@ -413,8 +413,15 @@ namespace Valve.VR.InteractionSystem
 		{
 			if ( rotateGameObject )
 			{
-				transform.localRotation = start * Quaternion.AngleAxis( outAngle, localPlaneNormal );
-			}
+                // 現在のローカル回転
+                Vector3 currentEulerAngles = transform.localEulerAngles;
+
+                // 回転軸を指定して更新 (他の軸はそのまま保持)
+                currentEulerAngles[(int)axisOfRotation] = outAngle;
+
+                // 回転を反映
+                transform.localEulerAngles = currentEulerAngles;
+            }
 		}
 
 
@@ -441,108 +448,41 @@ namespace Valve.VR.InteractionSystem
 		}
 
 
-		//-------------------------------------------------
-		// Computes the angle to rotate the game object based on the change in the transform
-		//-------------------------------------------------
-		private void ComputeAngle( Hand hand )
-		{
-			Vector3 toHandProjected = ComputeToTransformProjected( hand.hoverSphereTransform );
+        //-------------------------------------------------
+        // Computes the angle to rotate the game object based on the change in the transform
+        //-------------------------------------------------
+        private void ComputeAngle(Hand hand)
+        {
+            Vector3 toHandProjected = ComputeToTransformProjected(hand.hoverSphereTransform);
 
-			if ( !toHandProjected.Equals( lastHandProjected ) )
-			{
-				float absAngleDelta = Vector3.Angle( lastHandProjected, toHandProjected );
+            if (!toHandProjected.Equals(lastHandProjected))
+            {
+                float absAngleDelta = Vector3.Angle(lastHandProjected, toHandProjected);
 
-				if ( absAngleDelta > 0.0f )
-				{
-					if ( frozen )
-					{
-						float frozenSqDist = ( hand.hoverSphereTransform.position - frozenHandWorldPos ).sqrMagnitude;
-						if ( frozenSqDist > frozenSqDistanceMinMaxThreshold.x )
-						{
-							outAngle = frozenAngle + Random.Range( -1.0f, 1.0f );
+                if (absAngleDelta > 0.0f)
+                {
+                    Vector3 cross = Vector3.Cross(transform.InverseTransformVector(lastHandProjected), transform.InverseTransformVector(toHandProjected)).normalized;
+                    float dot = Vector3.Dot(localPlaneNormal, cross);
 
-							float magnitude = Util.RemapNumberClamped( frozenSqDist, frozenSqDistanceMinMaxThreshold.x, frozenSqDistanceMinMaxThreshold.y, 0.0f, 1.0f );
-							if ( magnitude > 0 )
-							{
-								StartCoroutine( HapticPulses( hand, magnitude, 10 ) );
-							}
-							else
-							{
-								StartCoroutine( HapticPulses( hand, 0.5f, 10 ) );
-							}
+                    float signedAngleDelta = absAngleDelta;
+                    if (dot < 0.0f)
+                    {
+                        signedAngleDelta = -signedAngleDelta;
+                    }
 
-							if ( frozenSqDist >= frozenSqDistanceMinMaxThreshold.y )
-							{
-								onFrozenDistanceThreshold.Invoke();
-							}
-						}
-					}
-					else
-					{
-						Vector3 cross = Vector3.Cross( lastHandProjected, toHandProjected ).normalized;
-						float dot = Vector3.Dot( worldPlaneNormal, cross );
+                    if (limited)
+                    {
+                        outAngle = Mathf.Clamp(outAngle + signedAngleDelta, minAngle, maxAngle);
+                    }
+                    else
+                    {
+                        outAngle += signedAngleDelta;
+                    }
 
-						float signedAngleDelta = absAngleDelta;
-
-						if ( dot < 0.0f )
-						{
-							signedAngleDelta = -signedAngleDelta;
-						}
-
-						if ( limited )
-						{
-							float angleTmp = Mathf.Clamp( outAngle + signedAngleDelta, minAngle, maxAngle );
-
-							if ( outAngle == minAngle )
-							{
-								if ( angleTmp > minAngle && absAngleDelta < minMaxAngularThreshold )
-								{
-									outAngle = angleTmp;
-									lastHandProjected = toHandProjected;
-								}
-							}
-							else if ( outAngle == maxAngle )
-							{
-								if ( angleTmp < maxAngle && absAngleDelta < minMaxAngularThreshold )
-								{
-									outAngle = angleTmp;
-									lastHandProjected = toHandProjected;
-								}
-							}
-							else if ( angleTmp == minAngle )
-							{
-								outAngle = angleTmp;
-								lastHandProjected = toHandProjected;
-								onMinAngle.Invoke();
-								if ( freezeOnMin )
-								{
-									Freeze( hand );
-								}
-							}
-							else if ( angleTmp == maxAngle )
-							{
-								outAngle = angleTmp;
-								lastHandProjected = toHandProjected;
-								onMaxAngle.Invoke();
-								if ( freezeOnMax )
-								{
-									Freeze( hand );
-								}
-							}
-							else
-							{
-								outAngle = angleTmp;
-								lastHandProjected = toHandProjected;
-							}
-						}
-						else
-						{
-							outAngle += signedAngleDelta;
-							lastHandProjected = toHandProjected;
-						}
-					}
-				}
-			}
-		}
-	}
+                    lastHandProjected = toHandProjected;
+                }
+            }
+        }
+    }
+	
 }
