@@ -10,12 +10,11 @@ public class LaserReflector : MonoBehaviour
     public float maxLaserDistance = 100f;  // 最大レーザー距離
     public LayerMask reflectLayerMask;  // 反射可能なレイヤー
     public Material[] laserMaterials;  // 反射ごとに使用するマテリアル
-
     private SteamVR_Action_Boolean Iui = SteamVR_Actions.default_InteractUI;
-    private List<GameObject> laserSegments = new List<GameObject>();  // 生成したレーザーオブジェクト
-    private Material firstHitMaterial = null;  // 最初に当たった壁のマテリアルを保存
     private Boolean interacrtui;
 
+    private List<GameObject> laserSegments = new List<GameObject>();  // 生成したレーザーオブジェクト
+    
     void Start()
     {
         QualitySettings.vSyncCount = 0;
@@ -25,7 +24,6 @@ public class LaserReflector : MonoBehaviour
     void Update()
     {
         interacrtui = Iui.GetState(SteamVR_Input_Sources.RightHand);
-
         if (interacrtui)
         {
             GenerateLaserPath();
@@ -50,96 +48,117 @@ public class LaserReflector : MonoBehaviour
         RaycastHit hit;
         if (Physics.Raycast(startPosition, direction, out hit, maxLaserDistance, reflectLayerMask))
         {
-            // 最初に当たった壁の色を設定
-            /*if (reflections == 0)
-            {
-                currentMaterial = ChooseMaterialBasedOnCollider(hit.collider);
-            }*/
+            // レーザーセグメントを生成
+            List<Vector3> positions = new List<Vector3> { startPosition, hit.point };
+            CreateLaserSegment(startPosition, hit.point, reflections, currentMaterial, positions);
 
-            // 反射後のレーザーを生成する際、壁の種類に応じて色を変える
-            CreateLaserSegment(startPosition, hit.point, reflections, hit.collider, currentMaterial);
+            // コライダーに応じてマテリアルを変更
+            currentMaterial = ChooseMaterialBasedOnCollider(hit.collider, currentMaterial);
+
+            // 反射処理
             direction = Vector3.Reflect(direction, hit.normal);
             startPosition = hit.point;
+
             reflections++;
-
-            // 次の反射に向けて、新たに当たった壁の色を設定
-            if (hit.collider != null)
-            {
-                currentMaterial = ChooseMaterialBasedOnCollider(hit.collider, currentMaterial);
-
-            }
         }
         else
         {
-            // 反射がない場合の最終レーザーを生成
-            CreateLaserSegment(startPosition, startPosition + direction * maxLaserDistance, reflections, null, currentMaterial);
+            // 何にも当たらなかった場合
+            List<Vector3> positions = new List<Vector3> { startPosition, startPosition + direction * maxLaserDistance };
+            CreateLaserSegment(startPosition, startPosition + direction * maxLaserDistance, reflections, currentMaterial, positions);
             break;
         }
     }
 }
 
-void CreateLaserSegment(Vector3 start, Vector3 end, int reflectionIndex, Collider hitCollider, Material currentMaterial)
+
+
+    void CreateLaserSegment(Vector3 start, Vector3 end, int reflectionIndex, Material currentMaterial, List<Vector3> posList)
 {
-    GameObject laser = Instantiate(laserPrefab);
-    LineRenderer lineRenderer = laser.GetComponent<LineRenderer>();
-    lineRenderer.SetPosition(0, start);
-    lineRenderer.SetPosition(1, end);
+    GameObject laser = Instantiate(laserPrefab, new Vector3(0, 0, 0), Quaternion.identity);
+    laser.tag = "laser";  // タグ設定
+    //laser.layer = LayerMask.NameToLayer("laserLayer");  // レイヤー設定
 
-    // 各レーザーの色を設定（反射回数ごとに色を設定）
-    lineRenderer.material = currentMaterial;
+    // LineRendererを取得
+    LineRenderer line = laser.GetComponent<LineRenderer>();
+    line.positionCount = posList.Count;
 
+    // LineRendererに座標を設定
+    for (int iLoop = 0; iLoop < posList.Count; iLoop++)
+    {
+        line.SetPosition(iLoop, posList[iLoop]);
+    }
+
+    // BoxColliderを追加して調整
+    BoxCollider boxCollider = laser.AddComponent<BoxCollider>();
+    //boxCollider.isTrigger = true;
+
+    // レーザーの方向ベクトルを計算
+    Vector3 direction = end - start;
+    float length = direction.magnitude; // レーザーの長さ
+
+    // レーザーの回転を設定
+    laser.transform.position = start;
+    laser.transform.LookAt(end);
+
+    // コライダーの中心を設定 (ローカル空間での中心)
+    boxCollider.center = new Vector3(0, 0, length / 2.0f);
+
+    // コライダーのサイズを設定 (長さに沿ったスケール)
+    boxCollider.size = new Vector3(0.1f, 0.1f, length);
+
+    // LineRendererの設定
+    line.SetPosition(0, start);
+    line.SetPosition(1, end);
+    line.material = currentMaterial;
+
+    // 作成したレーザーをリストに追加
     laserSegments.Add(laser);
 }
 
-Material ChooseMaterialBasedOnCollider(Collider collider, Material currentMaterial)
-{
-    // 衝突対象と現在のマテリアルに基づいて次の色を決定
-    if (collider.CompareTag("Wall")) //青
+
+
+    Material ChooseMaterialBasedOnCollider(Collider collider, Material currentMaterial)
     {
-        if (currentMaterial == laserMaterials[2])//緑
+        if (collider.CompareTag("Wall"))
         {
-            return laserMaterials[4];  //シアン
+            if (currentMaterial == laserMaterials[2])
+            {
+                return laserMaterials[4];  // シアン
+            }
+            else if (currentMaterial == laserMaterials[3])
+            {
+                return laserMaterials[5];  // マゼンタ
+            }
+            return laserMaterials[1]; // 青
         }
-        else if (currentMaterial == laserMaterials[3])//赤
+        else if (collider.CompareTag("Wall2"))
         {
-            return laserMaterials[5];  //マゼンタ
+            if (currentMaterial == laserMaterials[1])
+            {
+                return laserMaterials[4];  // シアン
+            }
+            else if (currentMaterial == laserMaterials[3])
+            {
+                return laserMaterials[6];  // イエロー
+            }
+            return laserMaterials[2]; // 緑
         }
-        return laserMaterials[1];  
-    }
-    else if (collider.CompareTag("Wall2"))//緑
-    {
-        if (currentMaterial == laserMaterials[1])//青
+        else if (collider.CompareTag("Wall3"))
         {
-            return laserMaterials[4];  //シアン
+            if (currentMaterial == laserMaterials[2])
+            {
+                return laserMaterials[6];  // イエロー
+            }
+            else if (currentMaterial == laserMaterials[1])
+            {
+                return laserMaterials[5];  // マゼンタ
+            }
+            return laserMaterials[3]; // 赤
         }
-        else if (currentMaterial == laserMaterials[3])
-        {
-            return laserMaterials[6];  //イエロー
-        }
-        return laserMaterials[2];  
-    }
-    else if (collider.CompareTag("Wall3"))//赤
-    {
-        if (currentMaterial == laserMaterials[2])//緑
-        {
-            return laserMaterials[6];  
-        }
-        if (currentMaterial == laserMaterials[1])
-        {
-            return laserMaterials[5];  //マゼンタ
-        }
-        return laserMaterials[3]; 
-    }
-    else
-    {
         return currentMaterial;
-    
     }
-}
 
-
-
-    
     void ClearLaserSegments()
     {
         foreach (GameObject laser in laserSegments)
@@ -148,4 +167,5 @@ Material ChooseMaterialBasedOnCollider(Collider collider, Material currentMateri
         }
         laserSegments.Clear();
     }
+
 }
